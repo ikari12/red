@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RFD Landing Analyzer — 着地RFD計測</title>
+<style>
+:root {
+  --bg-0: #0a0e14; --bg-1: #131922; --bg-2: #1a2233;
+  --text-0: #e6edf3; --text-1: #9eaab8; --text-2: #5c6a7a;
+  --orange: #f59e0b; --orange-dim: rgba(245,158,11,0.15);
+  --blue: #60a5fa; --red: #f87171; --green: #6ee7b7;
+  --border: rgba(255,255,255,0.07);
+  --radius: 14px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Inter',-apple-system,sans-serif; background:var(--bg-0); color:var(--text-0); min-height:100vh; }
+.container { max-width:1000px; margin:0 auto; padding:1.5rem; }
+
+h1 { font-size:1.4rem; font-weight:700; color:var(--orange); }
+.subtitle { color:var(--text-2); font-size:0.82rem; margin:0.3rem 0 1.5rem; line-height:1.5; }
+
+.card { background:var(--bg-1); border-radius:var(--radius); padding:1.2rem; border:1px solid var(--border); margin-bottom:1rem; }
+.card h2 { font-size:1rem; font-weight:600; margin-bottom:0.8rem; }
+.card h2.compare-title { color:var(--orange); }
+
+.protocol-steps { list-style:none; counter-reset:step; }
+.protocol-steps li { counter-increment:step; padding:0.4rem 0; color:var(--text-1); font-size:0.88rem; line-height:1.5; }
+.protocol-steps li::before { content:counter(step)". "; color:var(--orange); font-weight:700; }
+
+.upload-zone {
+  border:2px dashed var(--border); border-radius:12px; padding:2rem 1rem;
+  text-align:center; cursor:pointer; transition:all 0.3s;
+}
+.upload-zone:hover { border-color:var(--orange); background:var(--orange-dim); }
+.upload-zone.has-file { border-style:solid; border-color:var(--green); }
+.upload-icon { font-size:2rem; margin-bottom:0.3rem; }
+.upload-label { color:var(--text-2); font-size:0.85rem; }
+
+.video-wrap {
+  position:relative; width:100%; border-radius:10px; overflow:hidden;
+  background:#000; margin:0.8rem 0; display:none;
+}
+.video-wrap video { width:100%; display:block; }
+.video-wrap canvas {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  pointer-events:none;
+}
+
+.btn {
+  display:inline-flex; align-items:center; gap:0.4rem; padding:0.65rem 1.2rem;
+  border:none; border-radius:10px; font-size:0.88rem; font-weight:600;
+  cursor:pointer; transition:all 0.2s; margin-right:0.5rem; margin-top:0.5rem;
+}
+.btn-primary { background:var(--orange); color:#0a0e14; }
+.btn-primary:hover { filter:brightness(1.1); transform:translateY(-1px); }
+.btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+.btn-reset { background:var(--bg-2); color:var(--text-1); }
+.btn-camera { background:#ef4444; color:white; }
+.btn-camera:hover { filter:brightness(1.1); }
+.btn-camera.recording { animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+
+.progress-wrap { width:100%; height:4px; background:var(--bg-2); border-radius:2px; margin:0.6rem 0; overflow:hidden; display:none; }
+.progress-fill { height:100%; background:var(--orange); width:0%; transition:width 0.15s; }
+
+.status { color:var(--text-2); font-size:0.82rem; margin:0.5rem 0; min-height:1.2em; }
+
+.compare-grid { display:grid; grid-template-columns:1fr auto 1fr; gap:0; }
+.compare-header { text-align:center; padding:0.6rem; font-weight:700; font-size:0.88rem; border-bottom:2px solid var(--border); }
+.compare-header.lh { color:var(--blue); }
+.compare-header.ch { color:var(--text-2); font-size:0.8rem; }
+.compare-header.rh { color:var(--red); }
+.compare-cell { text-align:center; padding:0.55rem 0.3rem; font-family:'SF Mono',monospace; font-size:0.95rem; border-bottom:1px solid var(--border); }
+.compare-cell.label { color:var(--text-1); font-size:0.82rem; font-family:inherit; }
+.lsi-badge { display:inline-block; padding:0.2rem 0.6rem; border-radius:6px; font-weight:700; font-size:0.85rem; }
+.lsi-good { background:rgba(110,231,183,0.15); color:var(--green); }
+.lsi-warn { background:rgba(245,158,11,0.15); color:var(--orange); }
+.lsi-bad { background:rgba(248,113,113,0.15); color:var(--red); }
+
+.hidden { display:none; }
+.input-row { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin:0.6rem 0; }
+
+.slider-wrap { margin:0.8rem 0; }
+.slider-wrap label { display:flex; justify-content:space-between; align-items:center; color:var(--text-1); font-size:0.82rem; margin-bottom:0.3rem; }
+.slider-wrap label span { color:var(--orange); font-weight:600; font-family:'SF Mono',monospace; }
+.slider-wrap input[type=range] { width:100%; accent-color:var(--orange); }
+.slider-desc { color:var(--text-2); font-size:0.75rem; line-height:1.4; margin-top:0.2rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚡ RFD Landing Analyzer</h1>
+  <p class="subtitle">
+    縄跳びやジャンプ動作の動画から，着地直後の膝外反角（RFDプロキシ）と安定化時間を左右同時に計測します．<br>
+    殿筋のRFD（力の立ち上がり速度）が骨盤を安定させているかを検証するツールです．
+  </p>
+
+  <!-- Protocol -->
+  <div class="card">
+    <h2 style="color:var(--orange)">📋 やり方</h2>
+    <ol class="protocol-steps">
+      <li>全身が映る距離でスマホを正面に設置</li>
+      <li>縄跳びを5〜10秒 → 動画をアップロード or カメラで直接撮影</li>
+      <li>左右の膝外反角・安定化時間を自動で同時計測します</li>
+    </ol>
+  </div>
+
+  <!-- Input -->
+  <div class="card">
+    <h2 style="color:var(--orange)">📹 動画入力</h2>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('inputVideo').click()">
+      <div class="upload-icon">📹</div>
+      <div class="upload-label">動画をドロップ or タップ</div>
+      <input type="file" id="inputVideo" accept="video/*" class="hidden">
+    </div>
+    <div class="input-row">
+      <a href="#" onclick="loadSample(event)" style="color:var(--orange);font-size:0.82rem;text-decoration:underline">🎥 サンプル動画で試す</a>
+      <span style="color:var(--text-2);font-size:0.82rem">｜</span>
+      <button class="btn btn-camera" id="cameraBtn" onclick="toggleCamera()">📷 カメラで撮影</button>
+    </div>
+
+    <!-- Camera preview (hidden until camera active) -->
+    <div class="video-wrap" id="cameraWrap">
+      <video id="cameraVideo" muted playsinline autoplay></video>
+    </div>
+
+    <!-- Analysis video + skeleton canvas overlay -->
+    <div class="video-wrap" id="videoWrap">
+      <video id="mainVideo" muted playsinline></video>
+      <canvas id="mainCanvas"></canvas>
+    </div>
+
+    <div class="slider-wrap">
+      <label>🎚️ 着地検出感度 <span id="sensVal">50</span></label>
+      <input type="range" id="sensSlider" min="10" max="90" value="50" oninput="document.getElementById('sensVal').textContent=this.value">
+      <div class="slider-desc">低い＝大きなジャンプのみ検出（ドロップジャンプ向き）．高い＝小さな動きも検出（縄跳び向き）．検出数が0の場合は上げてください．</div>
+    </div>
+    <div class="progress-wrap" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="status" id="statusText"></div>
+    <button class="btn btn-primary" id="analyzeBtn" disabled onclick="runAnalysis()">🔬 分析開始</button>
+  </div>
+
+  <!-- Comparison -->
+  <div class="card hidden" id="compareCard">
+    <h2 class="compare-title">⚖️ 左右比較 — RFDプロキシ</h2>
+    <div class="compare-grid">
+      <div class="compare-header lh">左脚 (L)</div>
+      <div class="compare-header ch">指標</div>
+      <div class="compare-header rh">右脚 (R)</div>
+
+      <div class="compare-cell" id="cmpValgusL">--</div>
+      <div class="compare-cell label">着地時ピーク膝外反角</div>
+      <div class="compare-cell" id="cmpValgusR">--</div>
+
+      <div class="compare-cell" id="cmpStabL">--</div>
+      <div class="compare-cell label">安定化時間</div>
+      <div class="compare-cell" id="cmpStabR">--</div>
+
+      <div class="compare-cell" id="cmpLsiValgus">--</div>
+      <div class="compare-cell label">LSI（膝外反角）</div>
+      <div class="compare-cell" id="cmpLsiValgusNote">--</div>
+
+      <div class="compare-cell" id="cmpLsiStab">--</div>
+      <div class="compare-cell label">LSI（安定化時間）</div>
+      <div class="compare-cell" id="cmpLsiStabNote">--</div>
+
+      <div class="compare-cell" id="cmpLandingsL">--</div>
+      <div class="compare-cell label">着地検出数</div>
+      <div class="compare-cell" id="cmpLandingsR">--</div>
+    </div>
+
+    <div style="margin-top:1rem; padding:0.8rem; background:var(--bg-2); border-radius:10px;">
+      <div style="color:var(--orange); font-weight:600; font-size:0.88rem; margin-bottom:0.4rem;">📖 解釈ガイド</div>
+      <div style="color:var(--text-1); font-size:0.82rem; line-height:1.6;">
+        <strong>着地時ピーク膝外反角</strong>: 着地後0.15秒以内の最大膝外反角．殿筋のRFDが高いほど小さい値になる．左右差5°未満が目標．<br>
+        <strong>安定化時間</strong>: 着地後に骨盤の振動が収まるまでの時間．殿筋のRFDが高いほど短い．左右差0.3秒未満が目標．<br>
+        <strong>LSI</strong>: 弱い側 ÷ 強い側 × 100%．90%以上が正常範囲（Knapik基準）．
+      </div>
+    </div>
+  </div>
+
+  <!-- Export -->
+  <div class="card hidden" id="exportCard">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="status" id="exportTimestamp"></span>
+      <button class="btn btn-reset" onclick="exportCSV()">📊 CSV出力</button>
+    </div>
+  </div>
+
+  <div class="status" id="modelStatus">⏳ AIモデル読み込み中...</div>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs";
+
+let poseLandmarker = null;
+const results = { L: null, R: null };
+let tsBase = 0;
+let cameraStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+
+// ── Init MediaPipe ──
+async function initModel() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm"
+  );
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numPoses: 1,
+    minPoseDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+  document.getElementById('modelStatus').textContent = '✅ AIモデル準備完了';
+  if (document.getElementById('mainVideo').src) document.getElementById('analyzeBtn').disabled = false;
+}
+initModel();
+
+// ── Camera ──
+window.toggleCamera = async function () {
+  const btn = document.getElementById('cameraBtn');
+  const camWrap = document.getElementById('cameraWrap');
+  const camVid = document.getElementById('cameraVideo');
+  const statusEl = document.getElementById('statusText');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // Stop recording
+    mediaRecorder.stop();
+    btn.textContent = '📷 カメラで撮影';
+    btn.classList.remove('recording');
+    statusEl.textContent = '⏳ 録画を処理中...';
+    return;
+  }
+
+  if (cameraStream) {
+    // Turn off camera
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    camWrap.style.display = 'none';
+    btn.textContent = '📷 カメラで撮影';
+    return;
+  }
+
+  // Start camera
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    camVid.srcObject = cameraStream;
+    camWrap.style.display = 'block';
+    statusEl.textContent = '📷 カメラ起動中 — 準備できたら「🔴 録画開始」を押してください';
+
+    // Change button to record
+    btn.textContent = '🔴 録画開始（5秒）';
+    btn.onclick = () => startRecording();
+  } catch (err) {
+    statusEl.textContent = '❌ カメラへのアクセスに失敗: ' + err.message;
+  }
+};
+
+function startRecording() {
+  const btn = document.getElementById('cameraBtn');
+  const statusEl = document.getElementById('statusText');
+  const camVid = document.getElementById('cameraVideo');
+
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(cameraStream, { mimeType: 'video/webm' });
+
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const file = new File([blob], 'camera_recording.webm', { type: 'video/webm' });
+    loadVideo(file);
+
+    // Stop camera
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    document.getElementById('cameraWrap').style.display = 'none';
+    btn.textContent = '📷 カメラで撮影';
+    btn.classList.remove('recording');
+    btn.onclick = () => toggleCamera();
+    statusEl.textContent = '✅ 録画完了 — 「分析開始」を押してください';
+  };
+
+  mediaRecorder.start();
+  btn.textContent = '⏹ 録画停止';
+  btn.classList.add('recording');
+  statusEl.textContent = '🔴 録画中... ジャンプしてください！';
+
+  // Auto-stop after 8 seconds
+  setTimeout(() => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+  }, 8000);
+}
+
+// ── File Upload ──
+const inputVideo = document.getElementById('inputVideo');
+const uploadZone = document.getElementById('uploadZone');
+
+inputVideo.addEventListener('change', e => { if (e.target.files[0]) loadVideo(e.target.files[0]); });
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.style.borderColor = 'var(--orange)'; });
+uploadZone.addEventListener('dragleave', () => { uploadZone.style.borderColor = ''; });
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.style.borderColor = '';
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('video/')) loadVideo(f);
+});
+
+function loadVideo(file) {
+  const vid = document.getElementById('mainVideo');
+  const wrap = document.getElementById('videoWrap');
+
+  vid.src = URL.createObjectURL(file);
+  vid.onloadedmetadata = () => {
+    wrap.style.display = 'block';
+
+    uploadZone.classList.add('has-file');
+    uploadZone.querySelector('.upload-label').textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`;
+    document.getElementById('statusText').textContent = `📹 ${vid.duration.toFixed(1)}秒, ${vid.videoWidth}x${vid.videoHeight}`;
+    if (poseLandmarker) document.getElementById('analyzeBtn').disabled = false;
+  };
+}
+
+// ── Geometry ──
+// 前額面投影角（FPPA）: 膝のX座標が股関節-足首ラインからどれだけ内側にズレたか
+// 膝屈曲（sagittal plane）の影響を除去した純粋な膝外反角
+function getValgus(lm, side, aspect = 1.0) {
+  const hi = side === 'L' ? 23 : 24, kn = side === 'L' ? 25 : 26, an = side === 'L' ? 27 : 28;
+  const hip = lm[hi], knee = lm[kn], ankle = lm[an];
+  if (hip.visibility < 0.4 || knee.visibility < 0.4 || ankle.visibility < 0.4) return null;
+
+  const hipX = hip.x * aspect, kneeX = knee.x * aspect, ankleX = ankle.x * aspect;
+
+  const totalY = Math.abs(hip.y - ankle.y);
+  if (totalY < 0.01) return null;
+  const t = (knee.y - hip.y) / (ankle.y - hip.y);
+  const expectedX = hipX + t * (ankleX - hipX);
+
+  const deviationX = kneeX - expectedX;
+  // L脚（画像右側）はX減少方向が内側，R脚（画像左側）はX増加方向が内側
+  const medialShift = side === 'L' ? -deviationX : deviationX;
+
+  // 大腿長と下腿長の和を物理的な基準長とする（しゃがんだ際の発散防止）
+  const thighLength = Math.hypot(kneeX - hipX, knee.y - hip.y);
+  const shinLength = Math.hypot(ankleX - kneeX, ankle.y - knee.y);
+  const legLength = thighLength + shinLength;
+  if (legLength < 0.01) return null;
+
+  const angle = Math.atan2(Math.abs(medialShift), legLength / 2) * 180 / Math.PI;
+
+  return medialShift > 0 ? angle : 0;
+}
+
+function getPelvisTilt(lm) {
+  const lh = lm[23], rh = lm[24];
+  if (lh.visibility < 0.4 || rh.visibility < 0.4) return null;
+  return lh.y - rh.y;
+}
+
+function getFootY(lm, side) {
+  // 足首（ankle）を優先．検出できなければ膝をフォールバック
+  const ankle = lm[side === 'L' ? 27 : 28];
+  if (ankle.visibility >= 0.2) return ankle.y;
+  const knee = lm[side === 'L' ? 25 : 26];
+  if (knee.visibility >= 0.3) return knee.y;
+  return null;
+}
+
+// ── Landing Detection（スライダー連動） ──
+function detectLandings(footYSeries, fps, sensitivity) {
+  const smoothed = movingAvg(footYSeries, 2);
+
+  const maxY = Math.max(...smoothed), minY = Math.min(...smoothed);
+  const amplitude = maxY - minY;
+  if (amplitude < 0.005) return [];
+
+  // sensitivity: 10(鈍感)〜90(敏感) -> 閾値を全体振幅の25%〜5%にマッピング
+  const thresholdMult = 0.25 - (sensitivity / 100) * 0.20;
+  const threshold = amplitude * thresholdMult;
+  const minHeight = minY + amplitude * 0.25;
+  const minGap = Math.floor(fps * 0.35);
+
+  console.log(`[Landing] sens=${sensitivity}, threshMult=${thresholdMult.toFixed(3)}, thresh=${threshold.toFixed(4)}, amp=${amplitude.toFixed(4)}`);
+
+  const landings = [];
+  for (let i = 1; i < smoothed.length - 1; i++) {
+    const prev = smoothed[i - 1], curr = smoothed[i], next = smoothed[i + 1];
+    if (curr > prev && curr > next && curr > minHeight) {
+      const windowStart = Math.max(0, i - Math.floor(fps * 0.6));
+      const localMin = Math.min(...smoothed.slice(windowStart, i));
+      const dropHeight = curr - localMin;
+
+      if (dropHeight > threshold) {
+        if (landings.length === 0 || i - landings[landings.length - 1] > minGap) {
+          landings.push(i);
+        }
+      }
+    }
+  }
+  return landings;
+}
+
+function movingAvg(arr, w) {
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - w); j <= Math.min(arr.length - 1, i + w); j++) { s += arr[j]; c++; }
+    out.push(s / c);
+  }
+  return out;
+}
+
+function computeStabilizationTime(pelvisSeries, landingFrame, fps) {
+  const windowSize = Math.floor(fps * 0.3); // 0.3秒窓
+  const threshold = 0.003;
+  const maxSearch = Math.floor(fps * 3);
+  for (let i = landingFrame + windowSize; i < Math.min(pelvisSeries.length, landingFrame + maxSearch); i++) {
+    const win = pelvisSeries.slice(i - windowSize, i);
+    const mean = win.reduce((a, b) => a + b, 0) / win.length;
+    const variance = win.reduce((a, v) => a + (v - mean) ** 2, 0) / win.length;
+    if (variance < threshold) return (i - landingFrame) / fps;
+  }
+  return null;
+}
+
+function peakValgusAtLanding(valgusSeries, landingFrame, fps) {
+  const win = Math.floor(fps * 0.3); // 着地後0.3秒以内のピーク
+  let peak = 0;
+  for (let i = landingFrame; i < Math.min(valgusSeries.length, landingFrame + win); i++) {
+    if (valgusSeries[i] !== null && valgusSeries[i] > peak) peak = valgusSeries[i];
+  }
+  return peak;
+}
+
+// ── Draw Skeleton on Canvas ──
+function drawSkeleton(ctx, w, h, lm) {
+  const toXY = p => ({ x: p.x * w, y: p.y * h });
+
+  const lShoulder = toXY(lm[11]), rShoulder = toXY(lm[12]);
+  const lHip = toXY(lm[23]), rHip = toXY(lm[24]);
+  const midS = { x: (lShoulder.x + rShoulder.x) / 2, y: (lShoulder.y + rShoulder.y) / 2 };
+  const midH = { x: (lHip.x + rHip.x) / 2, y: (lHip.y + rHip.y) / 2 };
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lShoulder.x, lShoulder.y); ctx.lineTo(rShoulder.x, rShoulder.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(midS.x, midS.y); ctx.lineTo(midH.x, midH.y); ctx.stroke();
+  [lShoulder, rShoulder].forEach(p => {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+  });
+
+  ctx.strokeStyle = 'rgba(245,158,11,0.7)'; ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(lHip.x, lHip.y); ctx.lineTo(rHip.x, rHip.y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const sides = [
+    { s: 'L', hi: 23, kn: 25, an: 27, color: '#60a5fa' },
+    { s: 'R', hi: 24, kn: 26, an: 28, color: '#f87171' },
+  ];
+  for (const leg of sides) {
+    const pts = [lm[leg.hi], lm[leg.kn], lm[leg.an]].map(toXY);
+    ctx.strokeStyle = leg.color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.stroke();
+    pts.forEach(p => { ctx.fillStyle = leg.color; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); });
+
+    // 股関節-足首ラインを点線で描画（外反角の基準線）
+    ctx.strokeStyle = `${leg.color}66`; ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    const knee = pts[1];
+    ctx.font = 'bold 14px Inter, sans-serif'; ctx.fillStyle = leg.color;
+    ctx.fillText(leg.s, knee.x + (leg.s === 'L' ? -20 : 10), knee.y - 12);
+
+    const v = getValgus(lm, leg.s, w / h);
+    if (v !== null && v > 0) {
+      const col = v > 8 ? '#f87171' : v > 4 ? '#fbbf24' : '#6ee7b7';
+      ctx.font = 'bold 15px SF Mono, monospace'; ctx.fillStyle = col;
+      ctx.fillText(`${v.toFixed(1)}°`, knee.x + (leg.s === 'L' ? -50 : 16), knee.y + 6);
+    }
+  }
+}
+
+// ── Main Analysis ──
+window.runAnalysis = async function () {
+  if (!poseLandmarker) return;
+  const vid = document.getElementById('mainVideo');
+  const can = document.getElementById('mainCanvas');
+  const ctx = can.getContext('2d');
+  const btn = document.getElementById('analyzeBtn');
+  const prog = document.getElementById('progressBar');
+  const progFill = document.getElementById('progressFill');
+  const statusEl = document.getElementById('statusText');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 分析中...';
+  prog.style.display = 'block';
+
+  // Reset: show video, clear canvas overlay
+  document.getElementById('videoWrap').style.display = 'block';
+  can.width = vid.videoWidth;
+  can.height = vid.videoHeight;
+  ctx.clearRect(0, 0, can.width, can.height);
+
+  try {
+
+  const duration = vid.duration;
+  const fps = 15;
+  const totalFrames = Math.floor(duration * fps);
+  tsBase += Math.ceil(duration * 1000) + 10000;
+  const aspect = vid.videoWidth / vid.videoHeight;
+  const allLandmarks = [];
+  const data = {
+    L: { footYs: [], valgus: [], pelvis: [] },
+    R: { footYs: [], valgus: [], pelvis: [] },
+  };
+  let capturedFrame = null; // save first landing frame image
+
+  // Pass 1: Extract all landmarks
+  for (let i = 0; i < totalFrames; i++) {
+    vid.currentTime = i / fps;
+    await new Promise(r => { vid.onseeked = r; setTimeout(r, 150); });
+
+    const ts = tsBase + Math.round(i / fps * 1000);
+    const result = poseLandmarker.detectForVideo(vid, ts);
+
+    if (result.landmarks && result.landmarks.length > 0) {
+      const lm = result.landmarks[0];
+      allLandmarks.push(lm);
+      for (const side of ['L', 'R']) {
+        data[side].footYs.push(getFootY(lm, side) || 0);
+        data[side].valgus.push(getValgus(lm, side, aspect));
+        data[side].pelvis.push(getPelvisTilt(lm) || 0);
+      }
+      // リアルタイムスケルトン描画
+      can.width = vid.videoWidth;
+      can.height = vid.videoHeight;
+      drawSkeleton(ctx, can.width, can.height, lm);
+    } else {
+      allLandmarks.push(null);
+      for (const side of ['L', 'R']) {
+        data[side].footYs.push(0);
+        data[side].valgus.push(null);
+        data[side].pelvis.push(0);
+      }
+    }
+
+    progFill.style.width = ((i + 1) / totalFrames * 100).toFixed(0) + '%';
+    statusEl.textContent = `フレーム ${i + 1}/${totalFrames} 処理中...`;
+  }
+
+  prog.style.display = 'none';
+
+  // Compute averaged foot Y series
+  const avgFootYs = data.L.footYs.map((ly, i) => (ly + data.R.footYs[i]) / 2);
+
+  // Debug: show detection stats
+  const detectedCount = allLandmarks.filter(l => l !== null).length;
+  const nonZeroFootYs = avgFootYs.filter(y => y > 0);
+  const footYmin = nonZeroFootYs.length > 0 ? Math.min(...nonZeroFootYs).toFixed(4) : 'N/A';
+  const footYmax = nonZeroFootYs.length > 0 ? Math.max(...nonZeroFootYs).toFixed(4) : 'N/A';
+  const amplitude = nonZeroFootYs.length > 0 ? (Math.max(...nonZeroFootYs) - Math.min(...nonZeroFootYs)).toFixed(4) : 'N/A';
+  console.log(`[RFD Debug] frames=${totalFrames}, detected=${detectedCount}, nonZeroFeet=${nonZeroFootYs.length}, footY range=[${footYmin}, ${footYmax}], amplitude=${amplitude}`);
+  console.log(`[RFD Debug] footYs: ${JSON.stringify(avgFootYs.map(y => parseFloat(y.toFixed(4))))}`);
+  console.log(`[RFD Debug] L valgus (first 30): ${JSON.stringify(data.L.valgus.slice(0, 30).map(v => v !== null ? parseFloat(v.toFixed(2)) : null))}`);
+  console.log(`[RFD Debug] R valgus (first 30): ${JSON.stringify(data.R.valgus.slice(0, 30).map(v => v !== null ? parseFloat(v.toFixed(2)) : null))}`);
+
+  // Always draw skeleton on a detected frame
+  const skeletonFrame = allLandmarks.findIndex(l => l !== null);
+  if (skeletonFrame >= 0) {
+    vid.currentTime = skeletonFrame / fps;
+    await new Promise(r => { vid.onseeked = r; setTimeout(r, 300); });
+    vid.pause();
+    can.width = vid.videoWidth;
+    can.height = vid.videoHeight;
+    drawSkeleton(ctx, can.width, can.height, allLandmarks[skeletonFrame]);
+  }
+
+  // Pass 2: Detect landings
+  const sensitivity = parseInt(document.getElementById('sensSlider').value);
+  const landings = detectLandings(avgFootYs, fps, sensitivity);
+
+  if (landings.length === 0) {
+    statusEl.textContent = `❌ 着地を検出できませんでした（検出=${detectedCount}/${totalFrames}, footY振幅=${amplitude}）`;
+    btn.disabled = false;
+    btn.textContent = '🔬 再分析';
+    return;
+  }
+
+  // Pass 3: Compute metrics per side
+  for (const side of ['L', 'R']) {
+    const landingMetrics = landings.map(frame => ({
+      frame,
+      peakValgus: peakValgusAtLanding(data[side].valgus, frame, fps),
+      stabTime: computeStabilizationTime(data[side].pelvis, frame, fps),
+    }));
+    const avgValgus = landingMetrics.reduce((s, m) => s + m.peakValgus, 0) / landingMetrics.length;
+    const stabTimes = landingMetrics.filter(m => m.stabTime !== null);
+    const avgStab = stabTimes.length > 0 ? stabTimes.reduce((s, m) => s + m.stabTime, 0) / stabTimes.length : null;
+    results[side] = { avgValgus, avgStab, landingCount: landings.length, metrics: landingMetrics };
+  }
+
+  // Draw skeleton overlay at first landing
+  const bestLanding = landings[0];
+  if (allLandmarks[bestLanding]) {
+    vid.currentTime = bestLanding / fps;
+    await new Promise(r => { vid.onseeked = r; setTimeout(r, 300); });
+    vid.pause();
+    // Draw skeleton overlay on the canvas (video shows underneath)
+    can.width = vid.videoWidth;
+    can.height = vid.videoHeight;
+    drawSkeleton(ctx, can.width, can.height, allLandmarks[bestLanding]);
+  }
+
+  statusEl.textContent = `✅ ${landings.length}回の着地を検出・左右同時分析完了`;
+  btn.textContent = '🔬 再分析';
+  btn.disabled = false;
+  showComparison();
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('statusText').textContent = '❌ エラー: ' + err.message;
+  } finally {
+    document.getElementById('analyzeBtn').disabled = false;
+    if (document.getElementById('analyzeBtn').textContent.includes('分析中')) {
+      document.getElementById('analyzeBtn').textContent = '🔬 再分析';
+    }
+    document.getElementById('progressBar').style.display = 'none';
+  }
+};
+
+// ── Comparison ──
+function showComparison() {
+  const L = results.L, R = results.R;
+  document.getElementById('cmpValgusL').textContent = L.avgValgus.toFixed(1) + '°';
+  document.getElementById('cmpValgusR').textContent = R.avgValgus.toFixed(1) + '°';
+  document.getElementById('cmpStabL').textContent = L.avgStab !== null ? L.avgStab.toFixed(2) + '秒' : '--';
+  document.getElementById('cmpStabR').textContent = R.avgStab !== null ? R.avgStab.toFixed(2) + '秒' : '--';
+  document.getElementById('cmpLandingsL').textContent = L.landingCount + '回';
+  document.getElementById('cmpLandingsR').textContent = R.landingCount + '回';
+
+  const maxV = Math.max(L.avgValgus, R.avgValgus);
+  if (maxV > 0) {
+    const lsiV = Math.min(L.avgValgus, R.avgValgus) / maxV * 100;
+    const ws = L.avgValgus > R.avgValgus ? 'L' : 'R';
+    const cls = lsiV >= 90 ? 'lsi-good' : lsiV >= 75 ? 'lsi-warn' : 'lsi-bad';
+    document.getElementById('cmpLsiValgus').innerHTML = `<span class="lsi-badge ${cls}">${lsiV.toFixed(0)}%</span>`;
+    document.getElementById('cmpLsiValgusNote').innerHTML = `<span style="color:var(--text-2);font-size:0.78rem">${ws === 'L' ? '左' : '右'}が大きい</span>`;
+  }
+
+  if (L.avgStab !== null && R.avgStab !== null) {
+    const lsiS = Math.min(L.avgStab, R.avgStab) / Math.max(L.avgStab, R.avgStab) * 100;
+    const ws = L.avgStab > R.avgStab ? 'L' : 'R';
+    const cls = lsiS >= 90 ? 'lsi-good' : lsiS >= 75 ? 'lsi-warn' : 'lsi-bad';
+    document.getElementById('cmpLsiStab').innerHTML = `<span class="lsi-badge ${cls}">${lsiS.toFixed(0)}%</span>`;
+    document.getElementById('cmpLsiStabNote').innerHTML = `<span style="color:var(--text-2);font-size:0.78rem">${ws === 'L' ? '左' : '右'}が遅い</span>`;
+  }
+
+  document.getElementById('compareCard').classList.remove('hidden');
+  document.getElementById('exportCard').classList.remove('hidden');
+  document.getElementById('exportTimestamp').textContent = `計測日時: ${new Date().toLocaleString('ja-JP')}`;
+}
+
+// ── CSV Export ──
+window.exportCSV = function () {
+  if (!results.L || !results.R) return;
+  const rows = [
+    ['指標', '左脚', '右脚', 'LSI(%)'],
+    ['着地時ピーク膝外反角(°)', results.L.avgValgus.toFixed(1), results.R.avgValgus.toFixed(1),
+      (Math.min(results.L.avgValgus, results.R.avgValgus) / Math.max(results.L.avgValgus, results.R.avgValgus) * 100).toFixed(0)],
+    ['安定化時間(秒)', results.L.avgStab?.toFixed(2) || '--', results.R.avgStab?.toFixed(2) || '--',
+      (results.L.avgStab && results.R.avgStab) ? (Math.min(results.L.avgStab, results.R.avgStab) / Math.max(results.L.avgStab, results.R.avgStab) * 100).toFixed(0) : '--'],
+    ['着地検出数', results.L.landingCount, results.R.landingCount, ''],
+    ['', '', '', ''],
+    ['計測日時', new Date().toLocaleString('ja-JP'), '', ''],
+  ];
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `rfd_landing_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+};
+
+// ── Sample Video ──
+window.loadSample = async function (e) {
+  e.preventDefault(); e.stopPropagation();
+  const st = document.getElementById('statusText');
+  st.textContent = '⏳ サンプル動画を読み込み中...';
+  try {
+    const resp = await fetch('sample_squatjump.mp4');
+    if (!resp.ok) throw new Error('サンプル動画の取得に失敗: ' + resp.status);
+    const blob = await resp.blob();
+    loadVideo(new File([blob], 'sample_squatjump.mp4', { type: 'video/mp4' }));
+  } catch (err) { st.textContent = '❌ ' + err.message; }
+};
+</script>
+</body>
+</html>
