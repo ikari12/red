@@ -664,7 +664,7 @@ window.loadSample = async function (e) {
   const st = document.getElementById('statusText');
   st.textContent = '⏳ サンプル動画を読み込み中...';
   try {
-    const resp = await fetch('https://storage.googleapis.com/cairn-public./sample_squatjump.mp4');
+    const resp = await fetch('./sample_squatjump.mp4');
     if (!resp.ok) throw new Error('サンプル動画の取得に失敗: ' + resp.status);
     const blob = await resp.blob();
     loadVideo(new File([blob], 'sample_squatjump.mp4', { type: 'video/mp4' }));
