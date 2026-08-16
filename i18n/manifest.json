@@ -1,0 +1,62 @@
+{
+  "default": "ja",
+  "cookie": "cairn_demo_lang",
+  "pivot": "ja",
+  "mode": "replace",
+  "languages": {
+    "ja": {
+      "nativeName": "日本語",
+      "shortLabel": "JA",
+      "bcp47": "ja"
+    },
+    "en": {
+      "nativeName": "English",
+      "shortLabel": "EN",
+      "bcp47": "en"
+    }
+  },
+  "pages": {
+    "balance_check_orig": {
+      "file": "locales/{lang}/balance_check_orig.json"
+    },
+    "climbing_analyzer": {
+      "file": "locales/{lang}/climbing_analyzer.json"
+    },
+    "climbing_cog": {
+      "file": "locales/{lang}/climbing_cog.json"
+    },
+    "climbing_cog_3d": {
+      "file": "locales/{lang}/climbing_cog_3d.json"
+    },
+    "details": {
+      "file": "locales/{lang}/details.json"
+    },
+    "help": {
+      "file": "locales/{lang}/help.json"
+    },
+    "knee_stress_simulator": {
+      "file": "locales/{lang}/knee_stress_simulator.json"
+    },
+    "pose_analyzer": {
+      "file": "locales/{lang}/pose_analyzer.json"
+    },
+    "recovery_dashboard": {
+      "file": "locales/{lang}/recovery_dashboard.json"
+    },
+    "recovery_dashboard_v2": {
+      "file": "locales/{lang}/recovery_dashboard_v2.json"
+    },
+    "rfd_landing_analyzer": {
+      "file": "locales/{lang}/rfd_landing_analyzer.json"
+    },
+    "sling": {
+      "file": "locales/{lang}/sling.json"
+    },
+    "tier_guide": {
+      "file": "locales/{lang}/tier_guide.json"
+    },
+    "unified_dashboard": {
+      "file": "locales/{lang}/unified_dashboard.json"
+    }
+  }
+}
